@@ -16,7 +16,7 @@ func TestDB_News(t *testing.T) {
 	var err error
 	pwd := os.Getenv("dbpass")
 	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
-	db.pool, err = pgxpool.Connect(ctx, connStr)
+	db.Pool, err = pgxpool.Connect(ctx, connStr)
 
 	if err != nil {
 		t.Errorf(err.Error())
@@ -36,7 +36,7 @@ func TestDB_News(t *testing.T) {
 		{
 			name: "TestDB_News1",
 			fields: fields{
-				pool: db.pool,
+				pool: db.Pool,
 			},
 			args: args{3},
 			want: [][]string{},
