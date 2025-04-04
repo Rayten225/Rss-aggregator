@@ -11,7 +11,7 @@ import (
 )
 
 type DB struct {
-	pool *pgxpool.Pool
+	Pool *pgxpool.Pool
 }
 
 type News struct {
@@ -35,7 +35,7 @@ func New() (*DB, error) {
 	var err error
 	pwd := os.Getenv("dbpass")
 	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
-	db.pool, err = pgxpool.Connect(ctx, connStr)
+	db.Pool, err = pgxpool.Connect(ctx, connStr)
 	if err != nil {
 		return nil, err
 	}
@@ -45,18 +45,20 @@ func New() (*DB, error) {
 func (db *DB) News(col int) [][]string {
 	ctx := context.Background()
 	result := make([][]string, 0)
-	rows, err := db.pool.Query(ctx, "SELECT * FROM news ORDER BY id DESC LIMIT $1;", col)
+	rows, err := db.Pool.Query(ctx, "SELECT id, name, description, publication_date, link FROM news ORDER BY id DESC LIMIT $1;", col)
 	if err != nil {
 		fmt.Println(err)
+		return result
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var news News
 		if err := rows.Scan(&news.id, &news.name, &news.description, &news.publication_date, &news.link); err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
 		result = append(result, []string{strconv.Itoa(news.id), news.name, news.description, news.publication_date, news.link})
 	}
-
 	return result
 }
