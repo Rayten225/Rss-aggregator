@@ -4,22 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v4/pgxpool"
-	_ "github.com/lib/pq"
-	"log"
 	"os"
 	"strconv"
 )
 
 type DB struct {
 	Pool *pgxpool.Pool
-}
-
-type News struct {
-	id               int
-	name             string
-	description      string
-	publication_date string
-	link             string
 }
 
 const (
@@ -29,34 +19,59 @@ const (
 	dbname = "GoNews"
 )
 
-func New() (*DB, error) {
-	ctx := context.Background()
-	db := DB{}
-	var err error
-	pwd := os.Getenv("dbpass")
-	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
-	db.Pool, err = pgxpool.Connect(ctx, connStr)
-	if err != nil {
-		return nil, err
-	}
-	return &db, nil
+type News struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	PublicationDate string `json:"publication_date"`
+	Link            string `json:"link"`
 }
 
-func (db *DB) News(col int) [][]string {
-	ctx := context.Background()
-	result := make([][]string, 0)
-	rows, err := db.Pool.Query(ctx, "SELECT * FROM news ORDER BY id DESC LIMIT $1;", col)
+func New(ctx context.Context, errCn chan<- error) *DB {
+	db := &DB{}
+	pwd := os.Getenv("dbpass")
+	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
+	pool, err := pgxpool.Connect(ctx, connStr)
 	if err != nil {
-		fmt.Println(err)
+		errCn <- fmt.Errorf("failed to connect to database: %w", err)
+		return nil
 	}
+
+	db.Pool = pool
+	return db
+}
+
+func (db *DB) News(ctx context.Context, col int) ([]News, error) {
+	if db.Pool == nil {
+		return nil, fmt.Errorf("database pool is not initialized")
+	}
+
+	result := make([]News, 0)
+	rows, err := db.Pool.Query(ctx,
+		"SELECT name, description, publication_date, link FROM news ORDER BY id DESC LIMIT $1;",
+		col)
+	if err != nil {
+		return nil, fmt.Errorf("query error: %w", err)
+	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var news News
-		if err := rows.Scan(&news.id, &news.name, &news.description, &news.publication_date, &news.link); err != nil {
-			log.Fatal(err)
+		if err := rows.Scan(&news.Name, &news.Description, &news.PublicationDate, &news.Link); err != nil {
+			fmt.Printf("scan error: %v\n", err)
+			continue
 		}
-		result = append(result, []string{strconv.Itoa(news.id), news.name, news.description, news.publication_date, news.link})
+		result = append(result, news)
 	}
 
-	return result
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return result, nil
+}
+
+func (db *DB) Close() {
+	if db.Pool != nil {
+		db.Pool.Close()
+	}
 }
