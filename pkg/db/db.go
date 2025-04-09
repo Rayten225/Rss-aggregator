@@ -6,7 +6,6 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"os"
 	"strconv"
-	"time"
 )
 
 type DB struct {
@@ -27,30 +26,18 @@ type News struct {
 	Link            string `json:"link"`
 }
 
-func New() (*DB, error) {
-	ctx := context.Background()
-	db := DB{}
+func New(ctx context.Context, errCn chan<- error) *DB {
+	db := &DB{}
 	pwd := os.Getenv("dbpass")
 	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
-
-	// Параметры повторных попыток
-	maxRetries := 10
-	retryDelay := 2 * time.Second
-
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		db.Pool, err = pgxpool.Connect(ctx, connStr)
-		if err == nil {
-			// Проверяем, что подключение действительно работает
-			if err = db.Pool.Ping(ctx); err == nil {
-				return &db, nil
-			}
-			db.Pool.Close()
-		}
-		fmt.Printf("Попытка %d: не удалось подключиться к базе данных: %v, ждём %v\n", i+1, err, retryDelay)
-		time.Sleep(retryDelay)
+	pool, err := pgxpool.Connect(ctx, connStr)
+	if err != nil {
+		errCn <- fmt.Errorf("failed to connect to database: %w", err)
+		return nil
 	}
-	return nil, fmt.Errorf("не удалось подключиться к базе данных после %d попыток: %v", maxRetries, err)
+
+	db.Pool = pool
+	return db
 }
 
 func (db *DB) News(ctx context.Context, col int) ([]News, error) {
