@@ -152,7 +152,7 @@ func TestOrdersHandler(t *testing.T) {
 		})
 	}
 
-	// Проверяем ошибки в errChan (для покрытия ветки в endpoints)
+	// Проверяем ошибки в errChan
 	select {
 	case err := <-errChan:
 		if err != nil {
