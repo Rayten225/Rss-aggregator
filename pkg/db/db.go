@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"os"
 	"strconv"
+	"time"
 )
 
 type DB struct {
@@ -30,13 +31,47 @@ func New(ctx context.Context, errCn chan<- error) *DB {
 	db := &DB{}
 	pwd := os.Getenv("dbpass")
 	connStr := "postgres://" + user + ":" + pwd + "@" + host + ":" + strconv.Itoa(port) + "/" + dbname
-	pool, err := pgxpool.Connect(ctx, connStr)
+
+	// Подключение с повторными попытками
+	maxRetries := 10
+	retryDelay := 2 * time.Second
+
+	var pool *pgxpool.Pool
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		pool, err = pgxpool.Connect(ctx, connStr)
+		if err == nil {
+			if err = pool.Ping(ctx); err == nil {
+				break
+			}
+			pool.Close()
+		}
+		fmt.Printf("Попытка %d: не удалось подключиться к базе данных: %v, ждём %v\n", i+1, err, retryDelay)
+		time.Sleep(retryDelay)
+	}
 	if err != nil {
-		errCn <- fmt.Errorf("failed to connect to database: %w", err)
+		errCn <- fmt.Errorf("failed to connect to database after %d retries: %w", maxRetries, err)
 		return nil
 	}
 
 	db.Pool = pool
+
+	// Создание таблицы news, если она не существует
+	_, err = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS news (
+			id SERIAL PRIMARY KEY,
+			name TEXT UNIQUE,
+			description TEXT,
+			publication_date TEXT,
+			link TEXT
+		);
+	`)
+	if err != nil {
+		errCn <- fmt.Errorf("failed to create table news: %w", err)
+		db.Pool.Close()
+		return nil
+	}
+
 	return db
 }
 
